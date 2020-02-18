@@ -1,6 +1,8 @@
 #include <string>
 #include <map>
 #include <deque>
+#include <vector>
+
 
 class Order
 {
@@ -14,18 +16,26 @@ class Order
         int ID;
 };
 
+class Level //TODO
+{
+    public:
+        Level(double p);
+        ~Level();
+        double price;
+        std::deque<Order*>  orders;
+};
+
 class Book
 {
     public:
         Book(std::string inst);
-        ~Book();
+        ~Book(); 
         void add(Order* Order);
-        void insert(Order* order, std::map<double, std::deque<Order*>*>& side);
-        void match(Order* order, std::map<double, std::deque<Order*>*>::iterator &found);
-
-        std::map<double, std::deque<Order*>*> buys;
-        std::map<double, std::deque<Order*>*> sells;
         std::string instrument;
+        std::vector<Level*> buys;
+        std::vector<Level*> sells;
+        void insert(Order* order, std::vector<Level*>& side); 
+        void match(Order* order, std::deque<Order*>&  orders);
 };
 
 class Matcher
@@ -38,3 +48,4 @@ class Matcher
         Book * findBook(std::string inst);
         int numOrders;
 };
+

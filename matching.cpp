@@ -20,110 +20,137 @@ Book::Book(std::string inst)
     instrument = inst;
 }    
 
-Book::~Book()
+Book::~Book() 
 {
-    for(std::map<double, std::deque<Order*>*>::iterator it = buys.begin(); it != buys.end(); ++it)
+    for(std::vector<Level*>::iterator it = buys.begin(); it != buys.end(); ++it)
     {
-        if(!(it->second->empty()))
-        {
-            for(std::deque<Order*>::iterator jt = it->second->begin(); jt != it->second->end(); ++jt)
-            {
-                delete *jt;
-            }
-        }
-        delete it->second;
+        delete *it;
     }
 
-    for(std::map<double, std::deque<Order*>*>::iterator it = sells.begin(); it != sells.end(); ++it)
+    for(std::vector<Level*>::iterator it = sells.begin(); it != sells.end(); ++it)
     {
-        if(!(it->second->empty()))
-        {
-            for(std::deque<Order*>::iterator jt = it->second->begin(); jt != it->second->end(); ++jt)
-            {
-                delete *jt;
-            }
-        }
-        delete it->second;
+        delete *it;
     }
 }
 
-void Book::insert(Order* order, std::map<double, std::deque<Order*>*>& side)
+void Book::insert(Order* order, std::vector<Level*>& side)
 {
-    std::map<double, std::deque<Order*>*>::iterator found = side.find(order->price);
-    if(found==side.end())
+    Level * level = 0;
+    std::vector<Level*>::iterator it = side.begin();
+    for(;it != side.end();++it)
     {
-        side[order->price] = new std::deque<Order*>();
+        if(order->side == 'B')
+        {
+            if(order->price > (*it)->price)
+            {
+                level = new Level(order->price);
+                side.insert(it, level);
+            }
+            else if(order->price == (*it)->price)
+            {
+                level = *it;
+                break;
+            }
+        }
+        else
+        {
+            if(order->price < (*it)->price)
+            {
+                level = new Level(order->price);
+                side.insert(it, level);
+            }
+            else if(order->price == (*it)->price)
+            {
+                level = *it;
+                break;
+            }
+        }
     }
-    side[order->price]->push_back(order);
+
+    if(it==side.end())
+    {
+        level = new Level(order->price);
+        side.push_back(level);
+    }
+    level->orders.push_back(order);
 }
 
-void Book::match(Order* order, std::map<double, std::deque<Order*>*>::iterator &found)
+void Book::match(Order* order, std::deque<Order*>&  orders)
 {
-    while(order->size > 0 && !(found->second->empty()))
+    while(order->size > 0 && !(orders.empty()))
     {
-        Order * match = found->second->front();
+        Order * match = orders.front();
         if(order->size > match->size)
         {
 
-            found->second->pop_front();
+            orders.pop_front();
             order->size -= match->size;
-            printf("Trade1 for %s price: %f size %d oid %d matches oid %d\n", order->instrument.c_str(), order->price, match->size, order->ID, match->ID);
+            printf("Trade1 for %s price: %f size %d oid %d matches oid %d\n", order->instrument.c_str(), match->price, match->size, order->ID, match->ID);
             delete match;
             
         }
         else if(match->size > order->size)
         {
             match->size -= order->size;
-            printf("Trade2 for %s price: %f size %d oid %d matches oid %d\n", order->instrument.c_str(), order->price, order->size, order->ID, match->ID);
+            printf("Trade2 for %s price: %f size %d oid %d matches oid %d\n", order->instrument.c_str(), match->price, order->size, order->ID, match->ID);
             order->size = 0;
         }
         else
         {
-            found->second->pop_front();
-            printf("Trade3 for %s price: %f size %d oid %d matches oid %d\n", order->instrument.c_str(), order->price, order->size, order->ID, match->ID);
+            orders.pop_front();
+            printf("Trade3 for %s price: %f size %d oid %d matches oid %d\n", order->instrument.c_str(), match->price, order->size, order->ID, match->ID);
             order->size = 0;
             delete match;
         }
     }
-    if(order->size > 0)
-    {
-        insert(order, order->side=='B' ? buys : sells);
-    }
-    else
-    {
-        delete order;
-    }
-    
 }
 
 void Book::add(Order* order)
 {
     if(order->side=='B')
     {
-        std::map<double, std::deque<Order*>*>::iterator found=sells.find(order->price);
-        if(!(found==sells.end()) && !(found->second->empty()))
+        while(order->size > 0 && !sells.empty() && order->price >= sells[0]->price)
         {
-            match(order, found);
-        }    
-        else
+            match(order, sells[0]->orders);
+            if(sells[0]->orders.empty())
+            {
+                sells.erase(sells.begin());
+            }
+        }
+        if(order->size > 0)
         {
             insert(order, buys);
         }
-        
+        else
+        {
+            delete order;
+        }
     }
     else if(order->side=='S')
     {
-        std::map<double, std::deque<Order*>*>::iterator found=buys.find(order->price);
-        if(!(found==buys.end()) && !(found->second->empty()))
+        while(order->size > 0 && !buys.empty() && order->price >= buys[0]->price)
         {
-            match(order, found);
+            match(order, buys[0]->orders);
+            if(buys[0]->orders.empty())
+            {
+                buys.erase(buys.begin());
+            }
         }
-        else
+        if(order->size > 0)
         {
             insert(order, sells);
         }
-        
+        else
+        {
+            delete order;
+        }
     }
+    else
+    {
+        //invalid order
+        delete order;
+    }
+    
 }
 
 Matcher::Matcher()
@@ -138,7 +165,6 @@ Matcher::~Matcher()
         delete it->second;
     }
 }
-
 
 void Matcher::incomingOrder(std::string inst, double price, int size, char side)
 {
@@ -165,6 +191,19 @@ Book * Matcher::findBook(std::string inst)
     return book;
 }
 
+Level::Level(double p)
+{
+    price = p;
+}
+
+Level::~Level()
+{
+    for(std::deque<Order*>::iterator it = orders.begin(); it != orders.end(); ++it)
+    {
+        delete *it;
+    }
+}
+
 int main()
 {
     Matcher * matcher = new Matcher();
@@ -181,9 +220,9 @@ int main()
     matcher->incomingOrder("AAPL", 98.85, 100, 'S'); //9
     matcher->incomingOrder("MSFT", 12.34, 100, 'S'); //10
     matcher->incomingOrder("AAPL", 98.95, 100, 'S'); //11
-    matcher->incomingOrder("MSFT", 54.32, 100, 'B'); //12
-    matcher->incomingOrder("AAPL", 98.95, 100, 'B'); //13 trade w/ 11
-    matcher->incomingOrder("MSFT", 12.34, 100, 'B'); //14 trade w/ 10
+    matcher->incomingOrder("MSFT", 54.32, 100, 'B'); //12 trade w/10
+    matcher->incomingOrder("AAPL", 98.95, 100, 'B'); //13 trade w/9
+    matcher->incomingOrder("MSFT", 12.34, 100, 'B'); //14 
 
 
     delete matcher;
